@@ -1,0 +1,74 @@
+name: Terragrunt OCI Deployment
+
+on:
+    workflow_call:
+        secrets:
+            TF_API_TOKEN:
+                required: true
+    push:
+        branches: [ "main" ]
+    pull_request:
+        branches: [ "main" ]
+    workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up OCI API Key
+        run: |
+          mkdir -p ~/.oci
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+
+      - name: Set environment variables for OCI and HCP
+        run: |
+          echo "Setting up OCI and HCP environment variables"
+        env:
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          HCP_CLIENT_ID: ${{ secrets.HCP_CLIENT_ID }}
+          HCP_CLIENT_SECRET: ${{ secrets.HCP_CLIENT_SECRET }}
+          HCP_ORG_ID: ${{ secrets.HCP_ORG_ID }}
+          HCP_PROJECT_ID: ${{ secrets.HCP_PROJECT_ID }}
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Install Terragrunt
+        run: |
+          curl -Ls https://github.com/gruntwork-io/terragrunt/releases/download/v0.48.0/terragrunt_linux_amd64 -o /usr/local/bin/terragrunt
+          chmod +x /usr/local/bin/terragrunt
+
+      - name: Authenticate with HCP
+        run: |
+          export HCP_CLIENT_ID="${{ secrets.HCP_CLIENT_ID }}"
+          export HCP_CLIENT_SECRET="${{ secrets.HCP_CLIENT_SECRET }}"
+          terraform login
+        env:
+          TF_VAR_hcp_client_id: ${{ secrets.HCP_CLIENT_ID }}
+          TF_VAR_hcp_client_secret: ${{ secrets.HCP_CLIENT_SECRET }}
+          TF_VAR_hcp_org_id: ${{ secrets.HCP_ORG_ID }}
+          TF_VAR_hcp_project_id: ${{ secrets.HCP_PROJECT_ID }}
+
+      - name: Run Terragrunt Init
+        run: terragrunt init
+
+      - name: Run Terragrunt Apply
+        run: terragrunt apply -auto-approve
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: ~/.oci/oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_hcp_client_id: ${{ secrets.HCP_CLIENT_ID }}
+          TF_VAR_hcp_client_secret: ${{ secrets.HCP_CLIENT_SECRET }}
+          TF_VAR_hcp_org_id: ${{ secrets.HCP_ORG_ID }}
+          TF_VAR_hcp_project_id: ${{ secrets.HCP_PROJECT_ID }}
